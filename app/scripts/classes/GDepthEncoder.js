@@ -35,6 +35,15 @@ Copyright (c) 2014 Rafał Lindemann. http://panrafal.github.com/depthy
     xmpHeader: 'http://ns.adobe.com/xap/1.0/',
     xmpExtensionHeader: 'http://ns.adobe.com/xmp/extension/',
 
+    escapeAttr: function(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    },
+
     // This is NOT a general purpose XMP builder!
     buildXMP: function(props, xmlns) {
       var xmp = [], k;
@@ -46,8 +55,7 @@ Copyright (c) 2014 Rafał Lindemann. http://panrafal.github.com/depthy
         xmp.push(' xmlns:', k, '="', xmlns[k], '"');
       }
       for (k in props) {
-        // TODO html entities escaping
-        xmp.push(' ', k, '="' + props[k] + '"');
+        xmp.push(' ', k, '="', this.escapeAttr(props[k]), '"');
       }
       xmp.push(' /></rdf:RDF></x:xmpmeta>');
       return xmp.join('');
