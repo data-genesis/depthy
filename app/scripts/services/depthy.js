@@ -793,72 +793,104 @@ angular.module('depthyApp').provider('depthy', function depthy() {
 
 
       exportWebmAnimation: function() {
-        var deferred = $q.defer(), promise = deferred.promise, encoder, aborted = false;
+        var deferred = $q.defer(), promise = deferred.promise, encoder, recorder, aborted = false;
+        var size = {width: depthy.exportSize, height: depthy.exportSize},
+            duration = viewer.animateDuration,
+            fps = Math.min(30),
+            frames = Math.max(4, Math.round(duration * fps)),
+            viewerObj = depthy.getViewer(),
+            oldOptions = viewerObj.getOptions();
 
-        Modernizr.load({
-          test: window.Whammy,
-          nope: 'bower_components/whammy/whammy.js',
-          complete: function() {
-            var size = {width: depthy.exportSize, height: depthy.exportSize},
-                duration = viewer.animateDuration,
-                fps = Math.min(30),
-                frames = Math.max(4, Math.round(duration * fps)),
-                viewerObj = depthy.getViewer(),
-                oldOptions = viewerObj.getOptions();
+        function cleanup() {
+          oldOptions.pauseRender = false;
+          viewerObj.setOptions(oldOptions);
+        }
 
-            encoder = new Whammy.Video(fps, 0.9);
-            console.log('FPS %d Frames %d Scale %d Size %d Duration %d', fps, frames, viewer.depthScale, depthy.exportSize, duration);
+        if (window.MediaRecorder && viewerObj.getCanvas().captureStream) {
+          var stream = viewerObj.getCanvas().captureStream(fps);
+          var chunks = [];
+          recorder = new MediaRecorder(stream, {mimeType: 'video/webm'});
+          recorder.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+          recorder.onstop = function() {
+            deferred.resolve(new Blob(chunks, {type: 'video/webm'}));
+            depthy.viewer.overrideStageSize = null;
+            $rootScope.$safeApply();
+          };
+          promise.finally(function(){
+            if (recorder.state !== 'inactive') recorder.stop();
+            cleanup();
+          });
 
-            promise.finally(function() {
-              oldOptions.pauseRender = false;
-              viewerObj.setOptions(oldOptions);
-            });
-
-            var frame = 0;
-            function worker() {
-              if (aborted) {
-                encoder = null;
-                return;
-              }
-              try {
-                if (frame < frames) {
-                  deferred.notify(frame/frames);
-                  viewerObj.setOptions({
-                    size: size,
-                    animate: true,
-                    fit: false,
-                    animatePosition: frame / frames,
-                    quality: 5,
-                    // make it 8, so it converts nicely to other video formats...
-                    sizeDivisible: 8,
-                    pauseRender: true,
-                  });
-                  viewerObj.render(true);
-                  encoder.add(viewerObj.getCanvas());
-                  ++frame;
-                  // wait every 4 frames
-                  if (frame % 4 === 0) {
-                    setTimeout(worker, 0);
-                  } else {
-                    worker();
-                  }
-                } else {
-                  var blob = encoder.compile();
-                  deferred.resolve(blob);
-                  depthy.viewer.overrideStageSize = null;
-                  $rootScope.$safeApply();
-                }
-              } catch (e) {
-                deferred.reject(e);
-              }
+          var frame = 0;
+          function step() {
+            if (aborted) {
+              if (recorder.state !== 'inactive') recorder.stop();
+              return;
             }
-            setTimeout(worker, 0);
-
+            if (frame < frames) {
+              deferred.notify(frame/frames);
+              viewerObj.setOptions({
+                size: size,
+                animate: true,
+                fit: false,
+                animatePosition: frame / frames,
+                quality: 5,
+                sizeDivisible: 8,
+                pauseRender: true,
+              });
+              viewerObj.render(true);
+              ++frame;
+              setTimeout(step, 1000 / fps);
+            } else {
+              recorder.stop();
+            }
           }
-        });
-        promise.abort = function() {
-          aborted = true;
-        };
+          recorder.start();
+          step();
+        } else {
+          Modernizr.load({
+            test: window.Whammy,
+            nope: 'bower_components/whammy/whammy.js',
+            complete: function() {
+              encoder = new Whammy.Video(fps, 0.9);
+              console.log('FPS %d Frames %d Scale %d Size %d Duration %d', fps, frames, viewer.depthScale, depthy.exportSize, duration);
+
+              promise.finally(function() { cleanup(); });
+
+              var frame = 0;
+              function worker() {
+                if (aborted) { encoder = null; return; }
+                try {
+                  if (frame < frames) {
+                    deferred.notify(frame/frames);
+                    viewerObj.setOptions({
+                      size: size,
+                      animate: true,
+                      fit: false,
+                      animatePosition: frame / frames,
+                      quality: 5,
+                      sizeDivisible: 8,
+                      pauseRender: true,
+                    });
+                    viewerObj.render(true);
+                    encoder.add(viewerObj.getCanvas());
+                    ++frame;
+                    if (frame % 4 === 0) { setTimeout(worker, 0); } else { worker(); }
+                  } else {
+                    var blob = encoder.compile();
+                    deferred.resolve(blob);
+                    depthy.viewer.overrideStageSize = null;
+                    $rootScope.$safeApply();
+                  }
+                } catch (e) {
+                  deferred.reject(e);
+                }
+              }
+              setTimeout(worker, 0);
+            }
+          });
+        }
+        promise.abort = function() { aborted = true; };
         return promise;
       },
 

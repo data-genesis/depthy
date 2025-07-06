@@ -15,6 +15,11 @@ describe('GDepthEncoder', function () {
     expect(xmp).toMatch(/^<x:xmpmeta .+ xmlns:GFocus="http.+test="TEST!".+<\/x:xmpmeta>$/);
   });
 
+  it('should escape special characters in XMP', function() {
+    var xmp = GDepthEncoder.buildXMP({'GDepth:Something': "<t&st\"'>"});
+    expect(xmp).toContain('GDepth:Something="&lt;t&amp;st&amp;quot;&apos;&gt;"');
+  });
+
   it('should understand dataURI', function() {
     var info = GDepthEncoder.dataURIinfo(xmpDataURI);
     expect(info.mime).toBe('image/jpeg');
